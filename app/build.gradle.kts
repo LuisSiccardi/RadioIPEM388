@@ -12,12 +12,11 @@ android {
         applicationId = "ar.edu.ipem388.radio"
         minSdk = 21
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
-
+        versionCode = 2
+        versionName = "2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-
+    buildFeatures { buildConfig = true } // fuerza la generación
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -59,4 +58,6 @@ dependencies {
     implementation("com.google.android.exoplayer:exoplayer:2.19.1")
     implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1") // Notificación/media controls
     implementation("androidx.media:media:1.7.0") // MediaSessionCompat
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jsoup:jsoup:1.17.2") // si preferís, podés evitar jsoup y usar regex puro
 }

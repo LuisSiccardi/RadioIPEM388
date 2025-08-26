@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+
+    <!-- Círculo (trazo violeta, sin relleno) -->
+    <path
+        android:pathData="M12,2 C6.48,2 2,6.48 2,12 2,17.52 6.48,22 12,22 17.52,22 22,17.52 22,12 22,6.48 17.52,2 12,2 z"
+        android:strokeColor="#6A347E"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"/>
+
+    <!-- Triángulo de play agrandado -->
+    <path
+        android:pathData="M9,6 L9,18 L18,12 Z"
+        android:fillColor="#6A347E"/>
+</vector>
