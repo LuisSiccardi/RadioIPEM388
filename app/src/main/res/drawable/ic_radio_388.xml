@@ -1,0 +1,71 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Todo dentro de la safe-zone 72x72 (margen 18 por lado) -->
+    <group android:translateX="18" android:translateY="18">
+
+        <!-- Marco redondeado con borde grueso (evenOdd) -->
+        <!-- Outer r=12 | Inner r=6 -->
+        <path
+            android:fillType="evenOdd"
+            android:fillColor="#6A347E"
+            android:pathData="
+                M18,22 H54
+                A12,12 0 0 1 66,34
+                V48
+                A12,12 0 0 1 54,60
+                H18
+                A12,12 0 0 1 6,48
+                V34
+                A12,12 0 0 1 18,22 Z
+
+                M17,27 H55
+                A6,6 0 0 1 61,33
+                V49
+                A6,6 0 0 1 55,55
+                H17
+                A6,6 0 0 1 11,49
+                V33
+                A6,6 0 0 1 17,27 Z" />
+
+        <!-- Antena dentro de la zona segura -->
+        <path
+            android:fillColor="#6A347E"
+            android:pathData="M12,22 L36,12 L38,16 L14,26 Z"/>
+
+        <!-- Visor (hueco): si lo querés recortado, descomentar y quitar dígitos -->
+        <!-- <path android:fillType="evenOdd" android:fillColor="#00000000"
+              android:pathData='M14,30 H58 V44 H14 Z'/> -->
+
+        <!-- Dígitos “3 8 8” estilo 7-segment, corridos a la IZQUIERDA -->
+        <!-- grosor de segmento = 3px; alto del visor ~14px (y=32..51) -->
+
+        <!-- 3 -->
+        <path android:fillColor="#6A347E" android:pathData="M14,32 H26 V35 H14 Z"/>  <!-- a -->
+        <path android:fillColor="#6A347E" android:pathData="M24,32 H27 V40 H24 Z"/>  <!-- b -->
+        <path android:fillColor="#6A347E" android:pathData="M14,40 H26 V43 H14 Z"/>  <!-- g -->
+        <path android:fillColor="#6A347E" android:pathData="M24,40 H27 V51 H24 Z"/>  <!-- c -->
+        <path android:fillColor="#6A347E" android:pathData="M14,48 H26 V51 H14 Z"/>  <!-- d -->
+
+        <!-- 8 (centro) -->
+        <path android:fillColor="#6A347E" android:pathData="M29,32 H41 V35 H29 Z"/>  <!-- a -->
+        <path android:fillColor="#6A347E" android:pathData="M29,40 H41 V43 H29 Z"/>  <!-- g -->
+        <path android:fillColor="#6A347E" android:pathData="M29,48 H41 V51 H29 Z"/>  <!-- d -->
+        <path android:fillColor="#6A347E" android:pathData="M29,32 H32 V43 H29 Z"/>  <!-- f -->
+        <path android:fillColor="#6A347E" android:pathData="M38,32 H41 V43 H38 Z"/>  <!-- b -->
+        <path android:fillColor="#6A347E" android:pathData="M29,40 H32 V51 H29 Z"/>  <!-- e -->
+        <path android:fillColor="#6A347E" android:pathData="M38,40 H41 V51 H38 Z"/>  <!-- c -->
+
+        <!-- 8 (derecha) -->
+        <path android:fillColor="#6A347E" android:pathData="M44,32 H56 V35 H44 Z"/>  <!-- a -->
+        <path android:fillColor="#6A347E" android:pathData="M44,40 H56 V43 H44 Z"/>  <!-- g -->
+        <path android:fillColor="#6A347E" android:pathData="M44,48 H56 V51 H44 Z"/>  <!-- d -->
+        <path android:fillColor="#6A347E" android:pathData="M44,32 H47 V43 H44 Z"/>  <!-- f -->
+        <path android:fillColor="#6A347E" android:pathData="M53,32 H56 V43 H53 Z"/>  <!-- b -->
+        <path android:fillColor="#6A347E" android:pathData="M44,40 H47 V51 H44 Z"/>  <!-- e -->
+        <path android:fillColor="#6A347E" android:pathData="M53,40 H56 V51 H53 Z"/>  <!-- c -->
+    </group>
+</vector>

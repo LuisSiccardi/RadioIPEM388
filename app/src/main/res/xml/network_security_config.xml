@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Permitimos HTTP (cleartext) solo a estos dominios -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">radio12345.com</domain>
+        <domain includeSubdomains="true">listen2myradio.com</domain>
+    </domain-config>
+</network-security-config>
