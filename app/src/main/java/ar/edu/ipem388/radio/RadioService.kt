@@ -13,12 +13,7 @@ import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerNotificationManager
-
-import android.content.Context
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.media.AudioAttributes as AndroidAudioAttributes
-import com.google.android.exoplayer2.audio.AudioAttributes as ExoAudioAttributes
+import com.google.android.exoplayer2.audio.AudioAttributes
 
 class RadioService : Service() {
 
@@ -28,69 +23,56 @@ class RadioService : Service() {
         const val ACTION_PAUSE = "ar.edu.ipem388.radio.action.PAUSE"
         const val ACTION_STOP  = "ar.edu.ipem388.radio.action.STOP"
 
+        const val ACTION_STATE = "ar.edu.ipem388.radio.action.STATE"
+        const val EXTRA_PLAYING = "extra_playing"
+
         const val CHANNEL_ID = "radio_playback"
         const val NOTIF_ID   = 1
 
-        // ⬇️ URL del stream
+        // URL del stream (https recomendado)
         const val STREAM_URL =
             "https://uk26freenew.listen2myradio.com/live.mp3?typeportmount=s1_8393_stream_479557847"
     }
 
-    // --- Player / media ---
     private lateinit var player: ExoPlayer
     private lateinit var mediaSession: MediaSessionCompat
     private lateinit var notifManager: PlayerNotificationManager
 
-    // --- AudioFocus manual (para no reanudar automáticamente) ---
-    private lateinit var audioManager: AudioManager
-    private var focusRequest: AudioFocusRequest? = null
+    private val prefs by lazy { getSharedPreferences("radio", MODE_PRIVATE) }
 
-    private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
-        when (change) {
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Audio temporal (WhatsApp, etc.) → Pausamos y NO reanudamos solos
-                pauseInternal(focusLoss = true)
-            }
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                // Pérdida total → Pausamos y soltamos el focus
-                pauseInternal(focusLoss = true)
-                abandonFocus()
-            }
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                // No reanudamos automáticamente: queda a decisión del usuario
-            }
-        }
+    private fun publishState(isPlaying: Boolean) {
+        prefs.edit().putBoolean("playing", isPlaying).apply()
+        sendBroadcast(Intent(ACTION_STATE).putExtra(EXTRA_PLAYING, isPlaying))
     }
 
     override fun onCreate() {
         super.onCreate()
 
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
         mediaSession = MediaSessionCompat(this, "RadioService").apply { isActive = true }
 
-        // ExoPlayer: SIN manejo automático de audio focus (false)
-        val exoAttrs = ExoAudioAttributes.Builder()
+        val attrs = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
         player = ExoPlayer.Builder(this).build().apply {
-            setAudioAttributes(exoAttrs, /* handleAudioFocus= */ false)
-            setHandleAudioBecomingNoisy(true) // pausa al desenchufar auriculares
+            setAudioAttributes(attrs, /* handleAudioFocus = */ true)
+            setHandleAudioBecomingNoisy(true)
             setMediaItem(MediaItem.fromUri(STREAM_URL))
             prepare()
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
-                    // Reintento simple si el stream se corta
+                    // Reintento básico si el stream se corta
                     playWhenReady = true
                     prepare()
                 }
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    publishState(isPlaying)
+                }
             })
         }
+        publishState(false) // estado inicial
 
-        // Notificación
         notifManager = PlayerNotificationManager.Builder(this, NOTIF_ID, CHANNEL_ID)
             .setMediaDescriptionAdapter(object : PlayerNotificationManager.MediaDescriptionAdapter {
                 override fun getCurrentContentTitle(player: Player): CharSequence =
@@ -126,6 +108,7 @@ class RadioService : Service() {
                     notificationId: Int,
                     dismissedByUser: Boolean
                 ) {
+                    publishState(false)
                     stopSelf()
                 }
             })
@@ -144,91 +127,41 @@ class RadioService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START, ACTION_PLAY -> startPlaying()
+            ACTION_START, ACTION_PLAY -> {
+                player.playWhenReady = true
+                player.play()
+                // onIsPlayingChanged(true) disparará publishState(true)
+            }
             ACTION_PAUSE -> {
-                pauseInternal(focusLoss = false)
-                abandonFocus()
+                player.pause()
+                publishState(false)
             }
             ACTION_STOP -> {
-                stopPlaying()
+                publishState(false)
+                notifManager.setPlayer(null)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+                stopSelf()
             }
         }
-        // No queremos que Android lo relance solo si lo mata.
         return START_NOT_STICKY
     }
 
-    // --- Helpers de reproducción / focus ---
-
-    private fun startPlaying() {
-        if (requestFocus()) {
-            player.playWhenReady = true
-            player.play()
-        }
-    }
-
-    private fun pauseInternal(focusLoss: Boolean) {
-        player.pause()
-        // Si quisieras reanudar automáticamente tras LOSS_TRANSIENT,
-        // podrías guardar un flag aquí y usarlo en AUDIOFOCUS_GAIN.
-    }
-
-    private fun stopPlaying() {
-        notifManager.setPlayer(null)
-        player.pause()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
-        abandonFocus()
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        publishState(false)
+        super.onTaskRemoved(rootIntent)
         stopSelf()
     }
 
-    private fun requestFocus(): Boolean {
-        val res = if (Build.VERSION.SDK_INT >= 26) {
-            val attrs = AndroidAudioAttributes.Builder()
-                .setUsage(AndroidAudioAttributes.USAGE_MEDIA)
-                .setContentType(AndroidAudioAttributes.CONTENT_TYPE_MUSIC)
-                .build()
-            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(attrs)
-                .setOnAudioFocusChangeListener(focusChangeListener)
-                .setWillPauseWhenDucked(true)
-                .build()
-            focusRequest = req
-            audioManager.requestAudioFocus(req)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                focusChangeListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            )
-        }
-        return res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    }
-
-    private fun abandonFocus() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.abandonAudioFocus(focusChangeListener)
-        }
-    }
-
-    // Si el usuario cierra la app "deslizando", apagamos todo.
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        stopPlaying()
-        super.onTaskRemoved(rootIntent)
-    }
-
     override fun onDestroy() {
+        publishState(false)
         notifManager.setPlayer(null)
         player.release()
         mediaSession.release()
-        abandonFocus()
         super.onDestroy()
     }
 
