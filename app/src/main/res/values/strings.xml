@@ -2,5 +2,39 @@
     <string name="app_name">RadioIPEM388</string>
     <string name="notif_channel_name">Reproducción</string>
     <string name="notif_channel_desc">Radio en vivo</string>
+    <string name="notification_permission_granted">Permiso de notificación concedido.</string>
+    <string name="notification_permission_denied">Permiso de notificación denegado. Algunas
+        funciones podrían estar limitadas.
+    </string>
+    <string name="about_title">Acerca de</string>
+    <string name="about_app_description">RadioIPEM388 — App de radio escolar en streaming.</string>
+    <string name="about_developed_by">Desarrollada por AtriaDev.</string>
+    <string name="privacy_policy">Política de privacidad</string>
+    <string name="third_party_licenses">Licencias de terceros</string>
+    <string name="licenses_title">Licencias de terceros</string>
+    <string name="licenses_exoplayer">ExoPlayer — Apache License
+        2.0\nhttps://github.com/androidx/media\n
+    </string>
+    <string name="licenses_androidx_material">AndroidX / Material — Apache License
+        2.0\nhttps://developer.android.com/jetpack/androidx\n
+    </string>
+    <string name="close">Cerrar</string>
+    <string name="atria_dev_credit_url">https://atriasur.org</string>
+    <string name="atria_dev_credit_text">atriasur.org</string>
+    <string name="atria_dev_label">AtriaDev</string>
+    <string name="terms_and_conditions_url">https://atriasur.org/terms-and-conditions</string>
+
+    <string name="pause">Pausar</string>
+    <string name="play">Reproducir</string>
+    <string name="playing_status">Reproduciendo</string>
+    <string name="stopped_status">Detenido</string>
+    <string name="exit_button_desc">Salir de la aplicación</string>
+
+    <string name="about_third_party_licenses_button">Acerca de / Licencias</string>
+    <string name="logo_content_description">Logo del Colegio</string>
+    <string name="apache_license_fallback_text">Licencia Apache 2.0 no pudo ser cargada.</string>
+    <!-- ... otros strings ... -->
+    <string name="radio_notification_content_text">Radio en vivo</string>
+    <string name="radio_notification_loading_text">Cargando radio...</string>
 
 </resources>

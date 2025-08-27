@@ -4,3 +4,13 @@ plugins {
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
 }
+
+// build.gradle (Nivel de Proyecto)
+
+buildscript {
+    repositories {
+        google() // <-- ASEGÚRATE DE QUE ESTÉ AQUÍ
+        mavenCentral()
+    }
+    // ... otras configuraciones ...
+}
