@@ -29,7 +29,7 @@ class RadioService : Service() {
         const val ACTION_PAUSE = "ar.edu.ipem388.radio.action.PAUSE"
         const val ACTION_STOP  = "ar.edu.ipem388.radio.action.STOP"
 
-        // 👇 NUEVO: sincronización de estado con la UI
+        // Sincronización de estado con la UI
         const val ACTION_QUERY  = "ar.edu.ipem388.radio.action.QUERY_STATE"
         const val ACTION_STATE  = "ar.edu.ipem388.radio.action.STATE"
         const val EXTRA_PLAYING = "extra_playing"
@@ -40,6 +40,7 @@ class RadioService : Service() {
         private const val PREFS = "radio_prefs"
         private const val KEY_LAST_URL = "last_stream_url"
 
+        // Fallback duro por si falla todo
         private const val HARD_FALLBACK =
             "https://uk26freenew.listen2myradio.com/live.mp3?typeportmount=s1_8393_stream_479557847"
     }
@@ -85,25 +86,20 @@ class RadioService : Service() {
             setHandleAudioBecomingNoisy(true)
             volume = NORMAL_VOLUME
             addListener(object : Player.Listener {
-
-                // Cambia cuando realmente está reproduciendo / deja de reproducir
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     broadcastState()
                 }
-
-                // Cambia cuando el estado pasa por BUFFERING, READY, ENDED, etc.
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     broadcastState()
                 }
-
                 override fun onPlayerError(error: PlaybackException) {
+                    // Si falla el stream, re-resolver y reintentar
                     resolveAndPlay(force = true)
                 }
-
             })
         }
 
-        // Notificación
+        // Notificación con controles
         notifManager = PlayerNotificationManager.Builder(this, NOTIF_ID, CHANNEL_ID)
             .setMediaDescriptionAdapter(object : PlayerNotificationManager.MediaDescriptionAdapter {
                 override fun getCurrentContentTitle(player: Player): CharSequence =
@@ -139,6 +135,7 @@ class RadioService : Service() {
                 setPlayer(player)
             }
 
+        // Resolver stream al iniciar
         resolveAndPlay(force = false)
         broadcastState() // estado inicial
     }
@@ -148,7 +145,7 @@ class RadioService : Service() {
             ACTION_START, ACTION_PLAY -> startPlaying()
             ACTION_PAUSE -> { pauseInternal(false); abandonFocus() }
             ACTION_STOP  -> stopPlaying()
-            ACTION_QUERY -> broadcastState()           // 👈 responde a la Activity
+            ACTION_QUERY -> broadcastState()
         }
         return START_NOT_STICKY
     }
@@ -187,7 +184,7 @@ class RadioService : Service() {
 
     private fun pauseInternal(@Suppress("UNUSED_PARAMETER") focusLoss: Boolean) {
         player.pause()
-        broadcastState() // feedback inmediato
+        broadcastState()
     }
 
     private fun stopPlaying() {
@@ -251,7 +248,7 @@ class RadioService : Service() {
         }
     }
 
-    // 👇 NUEVO: broadcast de estado real
+    // Broadcast de estado real
     private fun broadcastState() {
         val i = Intent(ACTION_STATE).apply {
             putExtra(EXTRA_PLAYING, ::player.isInitialized && player.isPlaying)

@@ -36,7 +36,6 @@ import android.os.Looper
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 
-
 class MainActivity : ComponentActivity() {
 
     private val reqNotifPerm =
@@ -52,7 +51,7 @@ class MainActivity : ComponentActivity() {
     private fun svc(action: String) =
         Intent(this, RadioService::class.java).apply { this.action = action }
 
-    // Reemplazá COMPLETO este método:
+    // Enviar acción al servicio + feedback inmediato + sync
     private fun send(action: String) {
         val i = svc(action)
 
@@ -70,13 +69,11 @@ class MainActivity : ComponentActivity() {
         }
 
         // 3) Sincronización con el estado real del Service
-        //    (una ahora y otra con un pequeño delay por si ExoPlayer aún no cambió)
         startService(svc(RadioService.ACTION_QUERY))
         Handler(Looper.getMainLooper()).postDelayed({
             startService(svc(RadioService.ACTION_QUERY))
         }, 800)
     }
-
 
     override fun onStart() {
         super.onStart()
@@ -93,12 +90,11 @@ class MainActivity : ComponentActivity() {
 
         val filter = IntentFilter(RadioService.ACTION_STATE)
 
-        // ✅ Único llamado compatible con todas las API (evita el warning del flag)
         ContextCompat.registerReceiver(
-            /* context = */ this,
-            /* receiver = */ r,
-            /* filter = */ filter,
-            /* flags = */ ContextCompat.RECEIVER_NOT_EXPORTED
+            this,
+            r,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         // Estado inicial (NO foreground)
@@ -170,7 +166,6 @@ fun RadioScreen(
             contentScale = ContentScale.Crop
         )
 
-        // Layout sin align(): zona central + footer
         Column(Modifier.fillMaxSize()) {
 
             // Centro (ocupa el espacio disponible)
@@ -202,12 +197,11 @@ fun RadioScreen(
                 }
             }
 
-            // Footer abajo SIEMPRE (incluye botón Salir a la derecha)
+            // Footer fijo abajo (incluye botón Salir)
             FooterBar(
                 onExit = { onStop(); onExit() },
                 appVersion = appVersion
             )
-
         }
     }
 }
@@ -223,7 +217,6 @@ private fun FooterBar(
     var showApache  by remember { mutableStateOf(false) }
     var showMIT     by remember { mutableStateOf(false) }
 
-    // Cargar texto desde /res/raw solo cuando se abre cada diálogo
     val ctx = LocalContext.current
     val apacheText by remember(showApache) {
         mutableStateOf(
@@ -242,25 +235,22 @@ private fun FooterBar(
         )
     }
 
-    val lineGap = 0.dp // mismo espacio entre renglones (ajustá a gusto)
+    val lineGap = 0.dp
 
     CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Gray.copy(alpha = 0.9f))
-                .padding(horizontal = 4.dp, vertical = 4.dp) // footer más bajo
-                .heightIn(max = 60.dp) // altura total reducida
+                .padding(horizontal = 4.dp, vertical = 4.dp)
+                .heightIn(max = 60.dp)
         ) {
-            // Tres renglones centrados
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 1) AtriaDev - Atriasur.org
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("AtriaDev - ", color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 10.sp))
-                   // Text(" - ", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 10.sp))
                     TextButton(
                         onClick = { uriHandler.openUri("https://atriasur.org") },
                         contentPadding = PaddingValues(0.dp)
@@ -271,14 +261,11 @@ private fun FooterBar(
 
                 Spacer(Modifier.height(lineGap))
 
-                // 2) Términos - Licencias
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
                         onClick = { uriHandler.openUri("https://atriasur.org/terms-and-conditions") },
                         contentPadding = PaddingValues(bottom = 3.dp)
                     ) { Text("Términos - ", color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 10.sp)) }
-
-                   // Text(" - ", color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 10.sp))
 
                     TextButton(
                         onClick = { showChooser = true },
@@ -290,10 +277,8 @@ private fun FooterBar(
                         color = Color.White.copy(alpha = 0.8f)
                     )
                 }
-
             }
 
-            // Power dentro del footer, a la derecha
             IconButton(
                 onClick = onExit,
                 modifier = Modifier
@@ -310,7 +295,6 @@ private fun FooterBar(
         }
     }
 
-    // Chooser de licencias y diálogos
     if (showChooser) {
         AlertDialog(
             onDismissRequest = { showChooser = false },
@@ -331,7 +315,6 @@ private fun FooterBar(
     if (showApache) LicenseDialog("Apache License 2.0", apacheText) { showApache = false }
     if (showMIT)    LicenseDialog("MIT License",        mitText)    { showMIT = false }
 }
-
 
 @Composable
 private fun LicenseDialog(

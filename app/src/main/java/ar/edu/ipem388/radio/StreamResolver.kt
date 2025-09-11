@@ -27,9 +27,11 @@ object StreamResolver {
                     if (!resp.isSuccessful) return@withContext null
                     val html = resp.body?.string() ?: return@withContext null
 
-                    // 1) Buscar .mp3 típicos
-                    val mp3 = Regex("""https?://[^\s"'<>]+?\.mp3[^\s"'<>]*""", RegexOption.IGNORE_CASE)
-                        .find(html)?.value
+                    // 1) Buscar .mp3 típicos (con cualquier query; debe incluir typeportmount)
+                    val mp3 = Regex(
+                        """https?://[^\s"'<>]+?\.mp3[^\s"'<>]*typeportmount=[^\s"'<>]+""",
+                        RegexOption.IGNORE_CASE
+                    ).find(html)?.value
                     if (mp3 != null) return@withContext mp3
 
                     // 2) Buscar .m3u8 por si cambian a HLS
