@@ -4,16 +4,17 @@
 
     <!-- Círculo completo (trazo violeta) -->
     <path
-        android:pathData="M12,2 C6.48,2 2,6.48 2,12 2,17.52 6.48,22 12,22 17.52,22 22,17.52 22,12 22,6.48 17.52,2 12,2 z"
+        android:pathData="M7.5,4.21 A9,9 1 1 0 16.5,4.21"
         android:strokeColor="#6A347E"
-        android:strokeWidth="2"
-        android:fillColor="#00000000" />
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
 
     <!-- Palito central que sobresale un poco por arriba -->
     <path
-        android:pathData="M12,1.5 L12,12"
+        android:pathData="M12,3 L12,12"
         android:strokeColor="#6A347E"
-        android:strokeWidth="3"
+        android:strokeWidth="2.5"
         android:strokeLineCap="round"
-        android:fillColor="#00000000" />
+        android:fillColor="#00000000"/>
 </vector>
