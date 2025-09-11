@@ -12,8 +12,8 @@ android {
         applicationId = "ar.edu.ipem388.radio"
         minSdk = 21
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "2.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig = true } // fuerza la generación
@@ -60,4 +60,7 @@ dependencies {
     implementation("androidx.media:media:1.7.0") // MediaSessionCompat
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.17.2") // si preferís, podés evitar jsoup y usar regex puro
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
 }

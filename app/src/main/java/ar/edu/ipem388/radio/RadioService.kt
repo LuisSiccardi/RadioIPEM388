@@ -3,6 +3,7 @@ package ar.edu.ipem388.radio
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -13,12 +14,12 @@ import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerNotificationManager
-
-import android.content.Context
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.media.AudioAttributes as AndroidAudioAttributes
 import com.google.android.exoplayer2.audio.AudioAttributes as ExoAudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import kotlinx.coroutines.*
+import android.graphics.Bitmap
 
 class RadioService : Service() {
 
@@ -28,38 +29,43 @@ class RadioService : Service() {
         const val ACTION_PAUSE = "ar.edu.ipem388.radio.action.PAUSE"
         const val ACTION_STOP  = "ar.edu.ipem388.radio.action.STOP"
 
+        // 👇 NUEVO: sincronización de estado con la UI
+        const val ACTION_QUERY  = "ar.edu.ipem388.radio.action.QUERY_STATE"
+        const val ACTION_STATE  = "ar.edu.ipem388.radio.action.STATE"
+        const val EXTRA_PLAYING = "extra_playing"
+
         const val CHANNEL_ID = "radio_playback"
         const val NOTIF_ID   = 1
 
-        // ⬇️ URL del stream
-        const val STREAM_URL =
+        private const val PREFS = "radio_prefs"
+        private const val KEY_LAST_URL = "last_stream_url"
+
+        private const val HARD_FALLBACK =
             "https://uk26freenew.listen2myradio.com/live.mp3?typeportmount=s1_8393_stream_479557847"
     }
 
-    // --- Player / media ---
+    // Ducking
+    private val NORMAL_VOLUME = 1.0f
+    private val DUCK_VOLUME   = 0.20f
+    private var preDuckVolume = NORMAL_VOLUME
+    private var isDucked      = false
+
     private lateinit var player: ExoPlayer
     private lateinit var mediaSession: MediaSessionCompat
     private lateinit var notifManager: PlayerNotificationManager
 
-    // --- AudioFocus manual (para no reanudar automáticamente) ---
     private lateinit var audioManager: AudioManager
     private var focusRequest: AudioFocusRequest? = null
+
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + serviceJob)
 
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Audio temporal (WhatsApp, etc.) → Pausamos y NO reanudamos solos
-                pauseInternal(focusLoss = true)
-            }
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                // Pérdida total → Pausamos y soltamos el focus
-                pauseInternal(focusLoss = true)
-                abandonFocus()
-            }
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                // No reanudamos automáticamente: queda a decisión del usuario
-            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> duck(true)
+            AudioManager.AUDIOFOCUS_GAIN -> duck(false)
+            AudioManager.AUDIOFOCUS_LOSS -> { pauseInternal(true); abandonFocus() }
         }
     }
 
@@ -67,10 +73,8 @@ class RadioService : Service() {
         super.onCreate()
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
         mediaSession = MediaSessionCompat(this, "RadioService").apply { isActive = true }
 
-        // ExoPlayer: SIN manejo automático de audio focus (false)
         val exoAttrs = ExoAudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -78,15 +82,24 @@ class RadioService : Service() {
 
         player = ExoPlayer.Builder(this).build().apply {
             setAudioAttributes(exoAttrs, /* handleAudioFocus= */ false)
-            setHandleAudioBecomingNoisy(true) // pausa al desenchufar auriculares
-            setMediaItem(MediaItem.fromUri(STREAM_URL))
-            prepare()
+            setHandleAudioBecomingNoisy(true)
+            volume = NORMAL_VOLUME
             addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    // Reintento simple si el stream se corta
-                    playWhenReady = true
-                    prepare()
+
+                // Cambia cuando realmente está reproduciendo / deja de reproducir
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    broadcastState()
                 }
+
+                // Cambia cuando el estado pasa por BUFFERING, READY, ENDED, etc.
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    broadcastState()
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    resolveAndPlay(force = true)
+                }
+
             })
         }
 
@@ -95,7 +108,6 @@ class RadioService : Service() {
             .setMediaDescriptionAdapter(object : PlayerNotificationManager.MediaDescriptionAdapter {
                 override fun getCurrentContentTitle(player: Player): CharSequence =
                     getString(R.string.app_name)
-
                 override fun createCurrentContentIntent(player: Player): PendingIntent? {
                     val intent = Intent(this@RadioService, MainActivity::class.java)
                     return PendingIntent.getActivity(
@@ -103,31 +115,17 @@ class RadioService : Service() {
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                 }
-
-                override fun getCurrentContentText(player: Player): CharSequence? =
-                    "Radio en vivo"
-
+                override fun getCurrentContentText(player: Player): CharSequence? = "Radio en vivo"
                 override fun getCurrentLargeIcon(
                     player: Player,
                     callback: PlayerNotificationManager.BitmapCallback
-                ) = null
+                ): Bitmap? = null
             })
             .setNotificationListener(object : PlayerNotificationManager.NotificationListener {
-                override fun onNotificationPosted(
-                    notificationId: Int,
-                    notification: Notification,
-                    ongoing: Boolean
-                ) {
-                    if (ongoing) startForeground(notificationId, notification)
-                    else stopForeground(false)
+                override fun onNotificationPosted(id: Int, n: Notification, ongoing: Boolean) {
+                    if (ongoing) startForeground(id, n) else stopForeground(false)
                 }
-
-                override fun onNotificationCancelled(
-                    notificationId: Int,
-                    dismissedByUser: Boolean
-                ) {
-                    stopSelf()
-                }
+                override fun onNotificationCancelled(id: Int, byUser: Boolean) { stopSelf() }
             })
             .setChannelNameResourceId(R.string.notif_channel_name)
             .setChannelDescriptionResourceId(R.string.notif_channel_desc)
@@ -140,36 +138,56 @@ class RadioService : Service() {
                 setUseRewindAction(false)
                 setPlayer(player)
             }
+
+        resolveAndPlay(force = false)
+        broadcastState() // estado inicial
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START, ACTION_PLAY -> startPlaying()
-            ACTION_PAUSE -> {
-                pauseInternal(focusLoss = false)
-                abandonFocus()
-            }
-            ACTION_STOP -> {
-                stopPlaying()
-            }
+            ACTION_PAUSE -> { pauseInternal(false); abandonFocus() }
+            ACTION_STOP  -> stopPlaying()
+            ACTION_QUERY -> broadcastState()           // 👈 responde a la Activity
         }
-        // No queremos que Android lo relance solo si lo mata.
         return START_NOT_STICKY
     }
 
-    // --- Helpers de reproducción / focus ---
+    private fun resolveAndPlay(force: Boolean) {
+        serviceScope.launch {
+            val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val cached = prefs.getString(KEY_LAST_URL, null)
 
-    private fun startPlaying() {
-        if (requestFocus()) {
-            player.playWhenReady = true
-            player.play()
+            val resolved = withContext(Dispatchers.IO) {
+                if (!force && cached != null) return@withContext cached
+                StreamResolver.resolveFromPortal() ?: cached ?: HARD_FALLBACK
+            }
+
+            if (resolved != cached) {
+                prefs.edit().putString(KEY_LAST_URL, resolved).apply()
+            }
+
+            val wasPlaying = player.isPlaying
+            player.setMediaItem(MediaItem.fromUri(resolved))
+            player.prepare()
+            if (wasPlaying) player.play()
         }
     }
 
-    private fun pauseInternal(focusLoss: Boolean) {
+    private fun startPlaying() {
+        if (requestFocus()) {
+            if (player.currentMediaItem == null) {
+                resolveAndPlay(force = false)
+            }
+            player.playWhenReady = true
+            player.play()
+            broadcastState() // feedback inmediato
+        }
+    }
+
+    private fun pauseInternal(@Suppress("UNUSED_PARAMETER") focusLoss: Boolean) {
         player.pause()
-        // Si quisieras reanudar automáticamente tras LOSS_TRANSIENT,
-        // podrías guardar un flag aquí y usarlo en AUDIOFOCUS_GAIN.
+        broadcastState() // feedback inmediato
     }
 
     private fun stopPlaying() {
@@ -178,11 +196,11 @@ class RadioService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+            @Suppress("DEPRECATION") stopForeground(true)
         }
         abandonFocus()
         stopSelf()
+        broadcastState()
     }
 
     private fun requestFocus(): Boolean {
@@ -194,7 +212,7 @@ class RadioService : Service() {
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(attrs)
                 .setOnAudioFocusChangeListener(focusChangeListener)
-                .setWillPauseWhenDucked(true)
+                .setWillPauseWhenDucked(false)
                 .build()
             focusRequest = req
             audioManager.requestAudioFocus(req)
@@ -213,12 +231,34 @@ class RadioService : Service() {
         if (Build.VERSION.SDK_INT >= 26) {
             focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         } else {
-            @Suppress("DEPRECATION")
-            audioManager.abandonAudioFocus(focusChangeListener)
+            @Suppress("DEPRECATION") audioManager.abandonAudioFocus(focusChangeListener)
         }
     }
 
-    // Si el usuario cierra la app "deslizando", apagamos todo.
+    private fun duck(enable: Boolean) {
+        if (!::player.isInitialized) return
+        if (enable) {
+            if (!isDucked) {
+                preDuckVolume = player.volume
+                player.volume = DUCK_VOLUME
+                isDucked = true
+            }
+        } else {
+            if (isDucked) {
+                player.volume = preDuckVolume.coerceIn(0f, 1f)
+                isDucked = false
+            }
+        }
+    }
+
+    // 👇 NUEVO: broadcast de estado real
+    private fun broadcastState() {
+        val i = Intent(ACTION_STATE).apply {
+            putExtra(EXTRA_PLAYING, ::player.isInitialized && player.isPlaying)
+        }
+        sendBroadcast(i)
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         stopPlaying()
         super.onTaskRemoved(rootIntent)
@@ -226,9 +266,10 @@ class RadioService : Service() {
 
     override fun onDestroy() {
         notifManager.setPlayer(null)
-        player.release()
+        if (::player.isInitialized) player.release()
         mediaSession.release()
         abandonFocus()
+        serviceJob.cancel()
         super.onDestroy()
     }
 
