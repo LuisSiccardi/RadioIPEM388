@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -15,7 +14,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,185 +21,132 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
+    private val selected = mutableStateOf(AudioSource.RECORDING)
+    private val phase = mutableStateOf(PlaybackPhase.STOPPED)
+    private val active = mutableStateOf(false)
+    private val detail = mutableStateOf("")
+    private var receiver: BroadcastReceiver? = null
+    private val notificationsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    private val reqNotifPerm =
-        if (Build.VERSION.SDK_INT >= 33)
-            registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-        else null
-
-    // Estado que refleja al Service (se actualiza por broadcast)
-    private val playingState = mutableStateOf(false)
-
-    private var stateReceiver: BroadcastReceiver? = null
-
-    private fun svc(action: String) =
-        Intent(this, RadioService::class.java).apply { this.action = action }
-
-    // Enviar acción al servicio + feedback inmediato + sync
-    private fun send(action: String) {
-        val i = svc(action)
-
-        // 1) Disparar la acción
-        if (action == RadioService.ACTION_PLAY || action == RadioService.ACTION_START) {
-            ContextCompat.startForegroundService(this, i)
-            // 2) Feedback inmediato en UI
-            playingState.value = true
-        } else {
-            startService(i)
-            if (action == RadioService.ACTION_PAUSE || action == RadioService.ACTION_STOP) {
-                // 2) Feedback inmediato en UI
-                playingState.value = false
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        selected.value = AudioSource.fromKey(getSharedPreferences(AudioSource.PREFS, MODE_PRIVATE)
+            .getString(AudioSource.SELECTED, null))
+        setContent {
+            MaterialTheme {
+                RadioScreen(selected.value, phase.value, active.value, detail.value,
+                    onSelect = ::selectSource,
+                    onToggle = { if (active.value) pause() else play() },
+                    onExit = {
+                        sendBroadcast(Intent(RadioService.ACTION_STOP).setPackage(packageName))
+                        finishAndRemoveTask()
+                    }, appVersion = BuildConfig.VERSION_NAME)
             }
         }
-
-        // 3) Sincronización con el estado real del Service
-        startService(svc(RadioService.ACTION_QUERY))
-        Handler(Looper.getMainLooper()).postDelayed({
-            startService(svc(RadioService.ACTION_QUERY))
-        }, 800)
     }
 
     override fun onStart() {
         super.onStart()
-
-        val r = object : BroadcastReceiver() {
+        // Querying must not create a service, make network requests or start playback.
+        phase.value = PlaybackPhase.STOPPED; active.value = false; detail.value = ""
+        val stateReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == RadioService.ACTION_STATE) {
-                    val isPlaying = intent.getBooleanExtra(RadioService.EXTRA_PLAYING, false)
-                    playingState.value = isPlaying
-                }
+                if (intent?.getStringExtra(RadioService.EXTRA_SOURCE) != selected.value.key) return
+                phase.value = PlaybackPhase.fromKey(intent.getStringExtra(RadioService.EXTRA_PHASE))
+                active.value = intent.getBooleanExtra(RadioService.EXTRA_ACTIVE, false)
+                detail.value = intent.getStringExtra(RadioService.EXTRA_MESSAGE).orEmpty()
             }
         }
-        stateReceiver = r
-
-        val filter = IntentFilter(RadioService.ACTION_STATE)
-
-        ContextCompat.registerReceiver(
-            this,
-            r,
-            filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-
-        // Estado inicial (NO foreground)
-        startService(svc(RadioService.ACTION_QUERY))
+        receiver = stateReceiver
+        ContextCompat.registerReceiver(this, stateReceiver, IntentFilter(RadioService.ACTION_STATE),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        sendBroadcast(Intent(RadioService.ACTION_QUERY).setPackage(packageName))
     }
 
     override fun onStop() {
+        receiver?.let(::unregisterReceiver); receiver = null
         super.onStop()
-        stateReceiver?.let { unregisterReceiver(it) }
-        stateReceiver = null
     }
 
-    private fun exitApp() {
-        send(RadioService.ACTION_STOP)
-        finishAndRemoveTask()
+    private fun selectSource(next: AudioSource) {
+        if (next == selected.value) return
+        selected.value = next
+        getSharedPreferences(AudioSource.PREFS, MODE_PRIVATE).edit()
+            .putString(AudioSource.SELECTED, next.key).apply()
+        active.value = false; phase.value = PlaybackPhase.STOPPED; detail.value = ""
+        sendBroadcast(Intent(RadioService.ACTION_SELECT).setPackage(packageName)
+            .putExtra(RadioService.EXTRA_SOURCE, next.key))
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            reqNotifPerm?.launch(Manifest.permission.POST_NOTIFICATIONS)
+    private fun play() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this,
+                Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            notificationsPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        active.value = true; phase.value = PlaybackPhase.CONNECTING; detail.value = ""
+        ContextCompat.startForegroundService(this, Intent(this, RadioService::class.java)
+            .setAction(RadioService.ACTION_PLAY).putExtra(RadioService.EXTRA_SOURCE, selected.value.key))
+    }
 
-        val appVersion: String = try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.PackageInfoFlags.of(0)
-                ).versionName ?: "—"
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(packageName, 0).versionName ?: "—"
-            }
-        } catch (_: Exception) { "—" }
-
-        setContent {
-            MaterialTheme {
-                val playing by playingState
-
-                RadioScreen(
-                    playing = playing,
-                    onPlay  = { send(RadioService.ACTION_PLAY) },
-                    onPause = { send(RadioService.ACTION_PAUSE) },
-                    onStart = { send(RadioService.ACTION_START) },
-                    onStop  = { send(RadioService.ACTION_STOP) },
-                    onExit  = { exitApp() },
-                    appVersion = appVersion
-                )
-            }
-        }
+    private fun pause() {
+        active.value = false; phase.value = PlaybackPhase.PAUSED; detail.value = ""
+        sendBroadcast(Intent(RadioService.ACTION_PAUSE).setPackage(packageName))
     }
 }
 
 @Composable
 fun RadioScreen(
-    playing: Boolean,
-    onPlay: () -> Unit, onPause: () -> Unit,
-    onStart: () -> Unit, onStop: () -> Unit,
-    onExit: () -> Unit,
-    appVersion: String
+    source: AudioSource, phase: PlaybackPhase, active: Boolean, detail: String,
+    onSelect: (AudioSource) -> Unit, onToggle: () -> Unit, onExit: () -> Unit, appVersion: String
 ) {
-    // Fondo + contenido apilado
+    val uriHandler = LocalUriHandler.current
     Box(Modifier.fillMaxSize()) {
-        Image(
-            painter = painterResource(id = R.drawable.fondobanner),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-
-        Column(Modifier.fillMaxSize()) {
-
-            // Centro (ocupa el espacio disponible)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(Modifier.height(250.dp))
-
-                    val iconRes = if (playing) R.drawable.ic_pause_24 else R.drawable.ic_play_24
-                    IconButton(
-                        onClick = { if (playing) onPause() else { onStart(); onPlay() } },
-                        modifier = Modifier.size(88.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(iconRes),
-                            contentDescription = if (playing) "Pausar" else "Reproducir",
-                            modifier = Modifier.size(72.dp),
-                            tint = Color.Unspecified
-                        )
+        Image(painterResource(R.drawable.fondobanner), contentDescription = null,
+            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = .96f))) {
+                    Column(Modifier.padding(20.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Radio Escolar 388", style = MaterialTheme.typography.headlineSmall)
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = source == AudioSource.RECORDING,
+                                onClick = { onSelect(AudioSource.RECORDING) }, label = { Text("Programa grabado") },
+                                modifier = Modifier.testTag("source_recording"))
+                            FilterChip(selected = source == AudioSource.LIVE,
+                                onClick = { onSelect(AudioSource.LIVE) }, label = { Text("En vivo") },
+                                modifier = Modifier.testTag("source_live"))
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(source.title, style = MaterialTheme.typography.titleLarge)
+                        Text(if (source == AudioSource.RECORDING) "Archivo de la radio · 4:33 · Sin conexión"
+                            else "Requiere que la emisora esté transmitiendo", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(16.dp))
+                        IconButton(onClick = onToggle, modifier = Modifier.size(88.dp).testTag("play_pause")) {
+                            Icon(painterResource(if (active) R.drawable.ic_pause_24 else R.drawable.ic_play_24),
+                                contentDescription = if (active) "Pausar" else "Reproducir",
+                                modifier = Modifier.size(72.dp), tint = Color.Unspecified)
+                        }
+                        Text(phase.label, modifier = Modifier.testTag("playback_status"))
+                        if (detail.isNotBlank()) Text(detail, modifier = Modifier.padding(top = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium)
+                        if (source == AudioSource.RECORDING) TextButton(onClick = { uriHandler.openUri(AudioSource.EPISODE_PAGE) }) {
+                            Text("Ver programa en iVoox")
+                        }
                     }
-
-                    Spacer(Modifier.height(8.dp))
-                    Text(text = if (playing) "Reproduciendo" else "Detenido")
-                    Spacer(Modifier.height(56.dp))
                 }
             }
-
-            // Footer fijo abajo (incluye botón Salir)
-            FooterBar(
-                onExit = { onStop(); onExit() },
-                appVersion = appVersion
-            )
+            FooterBar(onExit = onExit, appVersion = appVersion)
         }
     }
 }
