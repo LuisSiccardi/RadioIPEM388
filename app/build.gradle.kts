@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "ar.edu.ipem388.radio"
-        minSdk = 21
+        minSdk = 24
         targetSdk = 36
         versionCode = 5
         versionName = "2.2.2"
